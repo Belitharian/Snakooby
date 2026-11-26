@@ -33,7 +33,7 @@ UP = (0, -1)
 DOWN = (0, 1)
 
 ######## Fenêtre
-TITLE = "Snakooby"									# Texte de la barre de titre
+TITLE = "Snake"									# Texte de la barre de titre
 
 ######## Couleurs (R, V, B)
 BG_COLOR = (20, 20, 20)							# Fond gris très foncé (jeu et menu)
@@ -45,19 +45,10 @@ BUTTON_COLOR = (60, 60, 60)						# Fond des boutons
 BUTTON_HOVER_COLOR = (90, 90, 90)				# Plus clair quand la souris est dessus
 BUTTON_BORDER_COLOR = SNAKE_COLOR				# Bordure verte des boutons
 
-######## Vitesses
-# L'affichage et le déplacement du serpent ont chacun leur propre vitesse :
-# l'écran se redessine 60 fois par seconde, mais le serpent ne change de case que 8 fois par seconde.
-# Entre deux changements de case, je le fais glisser petit à petit : c'est ce qui rend le mouvement fluide
-FPS = 60										# Images affichées par seconde pendant la partie
-SNAKE_SPEED = 8									# Vitesse du serpent : nombre de cases parcourues par seconde
-STEP_TIME = 1000 / SNAKE_SPEED					# Durée d'un pas (passage d'une case à la suivante) en millisecondes : 1000 / 8 = 125 ms
+######## Vitesses (images par seconde)
+GAME_FPS = 8									# Vitesse du serpent : nombre de déplacements par seconde
+"""Vitesse de déplacement du serpent"""
 MENU_FPS = 30									# Le menu n'a pas besoin de tourner plus vite
-
-######## Clavier
-MAX_QUEUED_KEYS = 2								# Nombre maximum de flèches gardées en attente (voir add_direction dans snake.py)
-TURN_GRACE = 0.35								# Coup de pouce : une flèche appuyée pendant les premiers 35 % d'un pas fait tourner dans la case
-												# que la tête vient de quitter (voir "virage en retard" dans snake.py). 0 = désactivé
 
 ######## Serpent
 START_CELL = (10, 10)							# Case de départ de la tête (colonne, ligne)

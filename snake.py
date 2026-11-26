@@ -1,8 +1,9 @@
-""" 🐍 SNAKE v1.0.0
+﻿""" 🐍 SNAKE v1.0.0
 -----------------------------------------------------------------------
 Jeu du Snake avec pygame-ce.
 Contrôles : flèches du clavier pour diriger le serpent.
 La partie se termine si le serpent se touche lui-même ou un mur.
+Auteur : Julien G.
 Date : 25/11/2026
 -----------------------------------------------------------------------
 Lancer le jeu :
@@ -56,26 +57,16 @@ Fonctionnalités marquantes et pourquoi je les ai faites comme ça
 	Le serpent avance d'une case entière (CELL_SIZE pixels) à chaque tour, et la nourriture tombe toujours sur une case.
 	Comparer deux positions me suffit pour savoir si le serpent mange ou se cogne : pas de calcul de collision compliqué.
 
-3. Un mouvement fluide : l'affichage et le serpent ont chacun leur vitesse.
-	La boucle tourne FPS (60) fois par seconde : l'écran est redessiné 60 fois par seconde.
-	Le serpent, lui, ne change de case que SNAKE_SPEED (8) fois par seconde, quand STEP_TIME millisecondes se sont écoulées.
-	Entre deux pas, je fais glisser la tête et la queue de quelques pixels à chaque image (fonction draw_snake).
-	Le corps reste sur ses cases : comme pour la liste du serpent, seuls les deux bouts bougent.
-	La grille, les collisions et la nourriture ne changent pas : elles travaillent toujours case par case.
-	Pour changer la vitesse du serpent, je change SNAKE_SPEED dans constants.py.
+3. La vitesse du jeu = le nombre de tours par seconde.
+	clock.tick(GAME_FPS) fait une pause pour que la boucle tourne GAME_FPS (12, par défaut) fois par seconde.
+	Comme le serpent avance d'une case par tour, je change sa vitesse en changeant GAME_FPS dans constants.py.
 
 4. Le serpent peut suivre sa propre queue.
 	Pour tester s'il se mord, je regarde son corps SANS le bout de la queue, car la queue bouge en même temps que la tête.
 	Sauf s'il mange : là la queue reste en place, donc je la garde dans le test.
 
-5. Pas de demi-tour, et une file d'attente pour les touches.
+5. Pas de demi-tour.
 	Si le serpent va à droite, j'ignore la touche gauche : sinon il rentrerait directement dans son corps.
-	Les flèches ne changent pas la direction tout de suite : je les range dans une liste (next_directions)
-	et j'en utilise une à chaque pas. Si j'appuie très vite sur haut puis gauche, le serpent tourne en haut, PUIS à gauche,
-	au lieu de faire demi-tour et de se mordre. La liste garde au maximum MAX_QUEUED_KEYS touches.
-	Coup de pouce pour la réactivité : si j'appuie juste après que la tête a quitté sa case (début du glissement),
-	je refais le dernier pas dans la nouvelle direction. Le serpent tourne là où je le vois, et pas une case plus loin.
-	Pour ça, le calcul d'un pas est dans une fonction à part (move) que j'appelle aussi pour refaire le pas.
 
 6. La nourriture n'apparaît jamais sur le serpent.
 	random_food tire une case au hasard et recommence tant qu'elle tombe sur le serpent.
@@ -104,8 +95,7 @@ Notes sur pygame et Python
 - Je dessine tout dans une image "cachée", puis display.flip() l'affiche d'un coup. Si j'oublie flip(), je ne vois rien bouger
 - À chaque frame je redessine tout depuis le fond (screen.fill) : sinon les anciennes positions du serpent restent à l'écran
 - L'ordre de dessin compte : ce qui est dessiné en dernier passe par-dessus (fond -> grille -> nourriture -> serpent -> score)
-- clock.tick(FPS) met le jeu en pause juste ce qu'il faut pour afficher FPS images par seconde, et renvoie le temps écoulé (en millisecondes) depuis son dernier appel
-- screen.set_clip(rectangle) limite le dessin à ce rectangle (ce qui dépasse n'est pas dessiné) ; screen.set_clip(None) enlève la limite
+- clock.tick(GAME_FPS) met le jeu en pause juste ce qu'il faut. Comme le serpent avance d'une case par frame, c'est lui qui règle la vitesse du serpent
 - Je dois lire pygame.event.get() à chaque tour de boucle, même si je ne m'en sers pas : sinon Windows croit que la fenêtre a planté ("Ne répond pas")
 - Les couleurs sont en (Rouge, Vert, Bleu), chaque valeur entre 0 et 255
 - [] = une liste : je peux la modifier (insert, pop...). Par exemple, le serpent
@@ -258,240 +248,17 @@ def segment_image(snake, i, direction):
 	# Sinon les voisins sont sur deux côtés qui se touchent (ex. gauche + bas) : c'est un virage
 	return corner_images[corner_angle(to_front, to_back)]
 
-def is_straight(snake, i):
-	"""Renvoie True si le segment i du corps est droit, False si c'est un virage."""
-	to_front = step(snake[i], snake[i - 1])
-	to_back = step(snake[i], snake[i + 1])
-	# Droit = les deux voisins sont sur la même ligne, ou sur la même colonne
-	if to_front[1] == 0 and to_back[1] == 0:
-		return True
-	if to_front[0] == 0 and to_back[0] == 0:
-		return True
-	return False
-
-######## Mouvement fluide
-# Le serpent change de case seulement SNAKE_SPEED fois par seconde, mais l'écran se redessine FPS fois par seconde.
-# Entre deux pas, je fais glisser la tête et la queue de quelques pixels à chaque image : le mouvement paraît continu.
-# Le corps, lui, reste dessiné sur ses cases : seuls les deux bouts bougent, comme pour la liste du serpent.
-#
-#   Exemple : le serpent va vers la droite, shift = nombre de pixels déjà parcourus depuis le dernier pas
-#
-#        case de la queue   case suivante          avant-dernière case    case de la tête
-#       +----------------+----------------+  ...  +----------------+----------------+
-#       |  queue -->     |                |       |                |   tête -->     |
-#       +----------------+----------------+       +----------------+----------------+
-#        <-- shift -->                               <-- shift -->
-#        la queue avance de shift pixels             la tête avance de shift pixels
-#        vers la case suivante                       depuis l'avant-dernière case
-
-def slide(a, b, shift):
-	"""Position (en pixels) entre la case a et sa voisine b, après avoir avancé de shift pixels depuis a."""
-	d = step(a, b)
-	# Si a et b sont la même case, d = (0, 0) et la position reste a
-	return (a[0] + d[0] * shift, a[1] + d[1] * shift)
-
-def back_part(cell, d, length):
-	"""Partie ARRIÈRE de la case cell (le côté d'où vient le mouvement d), sur length pixels."""
-	# pygame.Rect(x, y, largeur, hauteur)
-	if d == RIGHT:
-		return pygame.Rect(cell[0], cell[1], length, CELL_SIZE)
-	if d == LEFT:
-		return pygame.Rect(cell[0] + CELL_SIZE - length, cell[1], length, CELL_SIZE)
-	if d == DOWN:
-		return pygame.Rect(cell[0], cell[1], CELL_SIZE, length)
-	# Il ne reste que UP
-	return pygame.Rect(cell[0], cell[1] + CELL_SIZE - length, CELL_SIZE, length)
-
-def front_part(cell, d, length):
-	"""Partie AVANT de la case cell (le côté vers lequel va le mouvement d), sur length pixels."""
-	if d == RIGHT:
-		return pygame.Rect(cell[0] + CELL_SIZE - length, cell[1], length, CELL_SIZE)
-	if d == LEFT:
-		return pygame.Rect(cell[0], cell[1], length, CELL_SIZE)
-	if d == DOWN:
-		return pygame.Rect(cell[0], cell[1] + CELL_SIZE - length, CELL_SIZE, length)
-	# Il ne reste que UP
-	return pygame.Rect(cell[0], cell[1], CELL_SIZE, length)
-
-def draw_snake(snake, previous_snake, direction, shift):
-	"""Dessine le serpent en faisant glisser la tête et la queue de shift pixels."""
-	# La queue a bougé pendant le dernier pas (sauf si le serpent vient de manger : elle est restée en place)
-	tail_moved = previous_snake[-1] != snake[-1]
-
-	# Serpent d'une seule case : il n'y a que la tête, je la fais glisser et c'est fini
-	if len(snake) == 1:
-		head_pos = slide(previous_snake[0], snake[0], shift)
-		screen.blit(segment_image(snake, 0, direction), head_pos)
-		return
-
-	# Pour le dessin, je remets l'ancienne case de la queue au bout de la liste : la queue est encore en train de la quitter
-	# drawn = la liste des cases à dessiner
-	drawn = snake.copy()
-	if tail_moved:
-		drawn.append(previous_snake[-1])
-
-	######## Corps
-	# Tous les segments sauf le premier (tête) et le dernier (queue)
-	last = len(drawn) - 1
-	for i in range(1, last):
-		cell = drawn[i]
-		image = segment_image(drawn, i, direction)
-		# Par défaut je dessine toute la case
-		visible = pygame.Rect(cell[0], cell[1], CELL_SIZE, CELL_SIZE)
-
-		# Case que la tête est en train de quitter : je ne dessine que la partie DERRIÈRE la tête
-		# (sinon le corps dépasserait autour du museau)
-		if i == 1 and is_straight(drawn, i):
-			head_dir = step(drawn[1], drawn[0])
-			visible = visible.clip(back_part(cell, head_dir, shift))
-
-		# Case dans laquelle la queue est en train d'entrer : je ne dessine que la partie DEVANT la queue
-		# (sinon le corps dépasserait autour de la pointe de la queue)
-		if tail_moved and i == last - 1 and is_straight(drawn, i):
-			tail_dir = step(drawn[last], drawn[i])
-			visible = visible.clip(front_part(cell, tail_dir, CELL_SIZE - shift))
-
-		# set_clip limite le dessin à un rectangle : tout ce qui dépasse est ignoré
-		screen.set_clip(visible)
-		screen.blit(image, cell)
-		screen.set_clip(None)						# None = je peux de nouveau dessiner partout
-
-	######## Queue
-	if tail_moved:
-		# La queue glisse de son ancienne case vers la nouvelle
-		tail_dir = step(previous_snake[-1], snake[-1])
-		tail_pos = slide(previous_snake[-1], snake[-1], shift)
-		# Si la case suivante est un virage, la queue droite ne peut pas le suivre :
-		# je la dessine seulement dans son ancienne case, elle a l'air de "rentrer" dans le virage
-		if not is_straight(drawn, last - 1):
-			old_cell = previous_snake[-1]
-			screen.set_clip(pygame.Rect(old_cell[0], old_cell[1], CELL_SIZE, CELL_SIZE))
-		screen.blit(tail_images[angle_of(tail_dir)], tail_pos)
-		screen.set_clip(None)
-	else:
-		# Le serpent vient de manger : la queue ne bouge pas pendant ce pas
-		screen.blit(segment_image(snake, len(snake) - 1, direction), snake[-1])
-
-	######## Tête (dessinée en dernier pour passer par-dessus le corps)
-	head_pos = slide(previous_snake[0], snake[0], shift)
-	screen.blit(segment_image(snake, 0, direction), head_pos)
-
-######## Clavier
-def add_direction(queue, direction, wanted):
-	"""Ajoute la direction wanted à la file d'attente queue, si c'est un vrai changement de direction."""
-	# Je compare avec la dernière direction prévue : la dernière de la file, ou la direction actuelle si la file est vide
-	if len(queue) > 0:
-		last = queue[-1]
-	else:
-		last = direction
-	# Même direction que la dernière prévue : inutile de l'ajouter
-	if wanted == last:
-		return
-	# Demi-tour (direction opposée, ex. (20, 0) et (-20, 0)) : interdit, le serpent rentrerait dans son corps
-	if wanted[0] == -last[0] and wanted[1] == -last[1]:
-		return
-	# File pleine : j'ignore la touche, sinon le serpent jouerait des touches appuyées il y a longtemps
-	if len(queue) >= MAX_QUEUED_KEYS:
-		return
-	queue.append(wanted)
-
-######## Déplacement
-def move(snake, direction, food):
-	"""Calcule le serpent après un pas dans la direction donnée.
-	Renvoie la nouvelle liste du serpent, ou None si le serpent meurt (mur ou corps).
-	La liste snake reçue n'est pas modifiée : je travaille sur une copie."""
-	######## Calcul de la nouvelle position de la tête
-	# Position de la tête
-	head_x, head_y = snake[0]
-	# Nouvelle position après la détection de la touche du clavier (ancienne position + direction)
-	new_head = (head_x + direction[0], head_y + direction[1])
-
-	# Est ce que le serpent va manger à cette nouvelle position ?
-	will_grow = new_head == food
-	# Copie du corps du serpent pour savoir s'il se mord lui-même
-	# .copy() est important : sans lui, body et snake seraient la MÊME liste et body.pop() raccourcirait le serpent original
-	body = snake.copy()
-	# Si le serpent NE MANGE PAS, je ne prends pas la dernière position de la queue
-	# (la queue libère sa case pendant ce tour, la tête a donc le droit d'y aller)
-	if not will_grow:
-		body.pop()
-
-	######## Collisions
-	# Collisions avec les murs ou le corps : fin de partie, retour au menu
-	# new_head[0] = x ; new_head[1] = y
-	#
-	# 1) Les murs : la tête sort de la fenêtre
-	#
-	#                     new_head[1] < 0 : sortie par le haut
-	#                    X  X  X  X  X  X  X  X
-	#                 0 +----------------------+
-	#    new_head[0]  X |                      | X   new_head[0] >= WIDTH
-	#    < 0          X |       fenêtre        | X   sortie par la droite
-	#    sortie par   X |                      | X
-	#    la gauche     HEIGHT +----------------+
-	#                    X  X  X  X  X  X  X  X
-	#                     new_head[1] >= HEIGHT : sortie par le bas
-	#
-	#    Pourquoi ">=" WIDTH et pas ">" : la dernière case commence à x = WIDTH - CELL_SIZE.
-	#    Une case qui commence à x = WIDTH est déjà entièrement en dehors de la fenêtre.
-	#
-	# 2) Le corps : la tête arrive sur une case du serpent
-	#
-	#    T = tête   o = corps   q = bout de la queue   * = nouvelle case de la tête (new_head)
-	#
-	#    Cas A : la tête mord son corps => perdu
-	#
-	#      . o o o . . .        Le serpent descend (la tête vient de la case au-dessus d'elle)
-	#      . o . T . . .        La case en dessous de T est un morceau du corps
-	#      . o o * o q .   <-   new_head in body => True => return score
-	#
-	#    Cas B : la tête va sur la case du bout de la queue => autorisé
-	#
-	#      . T o .              Le serpent allait à gauche, je tourne vers le bas
-	#      . * o .         <-   * est la case de q : pendant ce tour, la queue avance et libère sa case
-	#                           body.pop() a déjà retiré q de body => new_head in body => False => la partie continue
-	if (
-		new_head[0] < 0
-		or new_head[0] >= WIDTH
-		or new_head[1] < 0
-		or new_head[1] >= HEIGHT
-		# body est calculé ci-dessus
-		or new_head in body
-	):
-		# Le serpent meurt : None veut dire "pas de serpent"
-		return None
-
-	######## Nouveau serpent
-	new_snake = snake.copy()
-	# J'ajoute la nouvelle tête à la première position donc devant...
-	new_snake.insert(0, new_head)
-	# S'il ne mange pas, je retire la dernière position de la queue => le serpent garde la même longueur
-	# S'il mange, je garde la queue => le serpent grandit d'une case
-	if not will_grow:
-		new_snake.pop()
-	return new_snake
-
 ######## Partie
 def play():
 	"""Joue une partie et renvoie le score quand le serpent meurt."""
 	# Le serpent est une liste de positions (x, y) en pixels où snake[0] est la tête
 	snake = [(START_CELL[0] * CELL_SIZE, START_CELL[1] * CELL_SIZE)]
-	# Copie du serpent AVANT son dernier pas : sert à le faire glisser de son ancienne position vers la nouvelle
-	previous_snake = snake.copy()
-	# Déplacement appliqué à chaque pas : au départ vers la droite
+	# Déplacement appliqué à chaque tour : au départ vers la droite
 	direction = (CELL_SIZE, 0)
-	# File d'attente des flèches appuyées : une direction est utilisée à chaque pas
-	# Ex. : en allant à droite, j'appuie très vite sur haut puis gauche => [haut, gauche] : le serpent tourne en haut, PUIS à gauche
-	next_directions = []
 	food = random_food(snake) # Position de la première nourriture
 	score = 0
-	# Temps écoulé (en millisecondes) depuis le dernier pas du serpent
-	time_since_step = 0
-	# True si le coup de pouce (virage en retard) a déjà servi pendant ce pas : un seul par pas
-	late_turn_used = False
 
-	# Boucle principale : un passage dans la boucle = une image affichée (FPS fois par seconde)
-	# Le serpent, lui, ne change de case que lorsque STEP_TIME millisecondes se sont écoulées
+	# Boucle principale : un passage dans la boucle = une frame = un déplacement du serpent
 	# Infinie : j'en sors seulement avec "return" (le serpent meurt) ou quit_game() (fenêtre fermée)
 	while True:
 		######## Gestion des événements (fermeture de la fenêtre et clavier)
@@ -502,82 +269,93 @@ def play():
 				quit_game()
 			# Si c'est une touche enfoncée du clavier
 			if event.type == pygame.KEYDOWN:
-				# Je ne change pas la direction tout de suite : je la range dans la file d'attente
-				# None = aucune flèche appuyée
-				wanted = None
+				# Je change de direction, sauf pour faire demi-tour sur soi-même
 				# Axe Y inversé
-				if event.key == pygame.K_UP:
-					wanted = (0, -CELL_SIZE)
+				if event.key == pygame.K_UP and direction != (0, CELL_SIZE):
+					direction = (0, -CELL_SIZE)
+
 				# Axe Y inversé
-				if event.key == pygame.K_DOWN:
-					wanted = (0, CELL_SIZE)
-				if event.key == pygame.K_LEFT:
-					wanted = (-CELL_SIZE, 0)
-				if event.key == pygame.K_RIGHT:
-					wanted = (CELL_SIZE, 0)
-				if wanted is not None:
-					# Coup de pouce pour la réactivité ("virage en retard") :
-					# si la tête vient JUSTE de quitter sa case (début du glissement), le joueur voulait sûrement tourner
-					# dans cette case-là. Je refais alors le dernier pas dans la nouvelle direction, au lieu d'attendre le pas suivant.
-					#
-					#   Sans coup de pouce :          Avec coup de pouce :
-					#     . . . *                       . . * .
-					#     o o T >                       o o T .     T = case quittée par la tête, > = tête qui glisse
-					#   la tête tourne une case         la tête tourne dans la case T
-					#   plus loin (*)                   (petit saut de quelques pixels, invisible à l'œil)
-					late_turn_done = False
-					# Conditions : début du glissement, aucune touche en attente, au moins un pas déjà fait,
-					# le dernier pas n'a pas mangé (sinon la nourriture a déjà été déplacée), et pas déjà utilisé pendant ce pas
-					just_stepped = time_since_step < STEP_TIME * TURN_GRACE
-					has_stepped = previous_snake != snake
-					same_length = len(previous_snake) == len(snake)
-					if just_stepped and len(next_directions) == 0 and has_stepped and same_length and not late_turn_used:
-						# La touche doit être un vrai virage : ni la même direction, ni un demi-tour
-						is_same = wanted == direction
-						is_reverse = wanted[0] == -direction[0] and wanted[1] == -direction[1]
-						if not is_same and not is_reverse:
-							# Je refais le dernier pas depuis l'ancien serpent, dans la nouvelle direction
-							retry = move(previous_snake, wanted, food)
-							# Si ce nouveau pas tue le serpent, j'oublie le coup de pouce (la touche ira dans la file d'attente)
-							if retry is not None:
-								snake = retry
-								direction = wanted
-								late_turn_done = True
-								late_turn_used = True
-								# Ce nouveau pas peut tomber sur la nourriture
-								if len(snake) > len(previous_snake):
-									score += 1
-									food = random_food(snake)
-					# Sinon, comme avant : la touche attend le prochain pas
-					if not late_turn_done:
-						add_direction(next_directions, direction, wanted)
+				if event.key == pygame.K_DOWN and direction != (0, -CELL_SIZE):
+					direction = (0, CELL_SIZE)
 
-		######## Pas du serpent (seulement quand assez de temps s'est écoulé)
-		if time_since_step >= STEP_TIME:
-			# Je retire la durée d'un pas (et pas tout le temps écoulé) pour garder un rythme régulier
-			time_since_step = time_since_step - STEP_TIME
-			# Nouveau pas : le coup de pouce est de nouveau disponible
-			late_turn_used = False
+				if event.key == pygame.K_LEFT and direction != (CELL_SIZE, 0):
+					direction = (-CELL_SIZE, 0)
 
-			# Je prends la prochaine direction de la file d'attente, s'il y en a une
-			# pop(0) enlève et renvoie le PREMIER élément de la liste (le plus ancien)
-			if len(next_directions) > 0:
-				direction = next_directions.pop(0)
+				if event.key == pygame.K_RIGHT and direction != (-CELL_SIZE, 0):
+					direction = (CELL_SIZE, 0)
 
-			# Je calcule le serpent après ce pas (None = il est mort)
-			new_snake = move(snake, direction, food)
-			if new_snake is None:
-				return score
+		######## Calcul de la nouvelle position de la tête
+		# Position de la tête
+		head_x, head_y = snake[0]
+		# Nouvelle position après la détection de la touche du clavier (ancienne position + direction)
+		new_head = (head_x + direction[0], head_y + direction[1])
 
-			######## Déplacement du serpent
-			# Je garde le serpent d'avant le pas, pour le faire glisser pendant l'affichage
-			previous_snake = snake
-			snake = new_snake
+		# Est ce que le serpent va manger à cette nouvelle position ?
+		will_grow = new_head == food
+		# Copie du corps du serpent pour savoir s'il se mord lui-même
+		# .copy() est important : sans lui, body et snake seraient la MÊME liste et body.pop() raccourcirait le serpent original
+		body = snake.copy()
+		# Si le serpent NE MANGE PAS, je ne prends pas la dernière position de la queue
+		# (la queue libère sa case pendant ce tour, la tête a donc le droit d'y aller)
+		if not will_grow:
+			body.pop()
 
-			# Le serpent est plus long qu'avant : il a mangé
-			if len(snake) > len(previous_snake):
-				score += 1
-				food = random_food(snake)
+		######## Collisions
+		# Collisions avec les murs ou le corps : fin de partie, retour au menu
+		# new_head[0] = x ; new_head[1] = y
+		#
+		# 1) Les murs : la tête sort de la fenêtre
+		#
+		#                     new_head[1] < 0 : sortie par le haut
+		#                    X  X  X  X  X  X  X  X
+		#                 0 +----------------------+
+		#    new_head[0]  X |                      | X   new_head[0] >= WIDTH
+		#    < 0          X |       fenêtre        | X   sortie par la droite
+		#    sortie par   X |                      | X
+		#    la gauche     HEIGHT +----------------+
+		#                    X  X  X  X  X  X  X  X
+		#                     new_head[1] >= HEIGHT : sortie par le bas
+		#
+		#    Pourquoi ">=" WIDTH et pas ">" : la dernière case commence à x = WIDTH - CELL_SIZE.
+		#    Une case qui commence à x = WIDTH est déjà entièrement en dehors de la fenêtre.
+		#
+		# 2) Le corps : la tête arrive sur une case du serpent
+		#
+		#    T = tête   o = corps   q = bout de la queue   * = nouvelle case de la tête (new_head)
+		#
+		#    Cas A : la tête mord son corps => perdu
+		#
+		#      . o o o . . .        Le serpent descend (la tête vient de la case au-dessus d'elle)
+		#      . o . T . . .        La case en dessous de T est un morceau du corps
+		#      . o o * o q .   <-   new_head in body => True => return score
+		#
+		#    Cas B : la tête va sur la case du bout de la queue => autorisé
+		#
+		#      . T o .              Le serpent allait à gauche, je tourne vers le bas
+		#      . * o .         <-   * est la case de q : pendant ce tour, la queue avance et libère sa case
+		#                           body.pop() a déjà retiré q de body => new_head in body => False => la partie continue
+		if (
+			new_head[0] < 0
+			or new_head[0] >= WIDTH
+			or new_head[1] < 0
+			or new_head[1] >= HEIGHT
+			# body est calculé ci-dessus
+			or new_head in body
+		):
+			return score
+
+		######## Déplacement du serpent
+		# J'ajoute la nouvelle tête à la première position donc devant...
+		snake.insert(0, new_head)
+
+		# Je vérifie encore s'il a mangé dans cette itération (calculé plus haut)
+		if will_grow:
+			# Je garde la queue => le serpent grandit d'une case avec le insert à la position 0
+			score += 1
+			food = random_food(snake)
+		else:
+			# Sinon je retire la dernière position de la queue => le serpent garde la même longueur
+			snake.pop()
 
 		######## Affichage
 		# Fond gris très foncé (efface aussi tout ce qui a été dessiné à la frame précédente)
@@ -605,16 +383,17 @@ def play():
 		offset = (CELL_SIZE - FOOD_SIZE) // 2
 		screen.blit(food_image, (food[0] + offset, food[1] + offset))
 
-		# Avancement entre deux pas : 0 = le serpent vient de changer de case, 1 = le prochain pas arrive
-		progress = time_since_step / STEP_TIME
-		# Si l'ordinateur a pris du retard, progress peut dépasser 1 : je le bloque à 1 pour ne pas dépasser la case
-		if progress > 1:
-			progress = 1
-		# Nombre de pixels déjà parcourus vers la case suivante (int() garde seulement la partie entière)
-		shift = int(CELL_SIZE * progress)
+		# Chaque segment du serpent est une image (tête, corps, virage ou queue) collée sur sa case
+		# i va de 0 (la tête) à len(snake) - 1 (la queue)
+		# A savoir, range est exclusif, donc pas besoin de faire - 1 sur la taille du serpent
+		for i in range(len(snake)):
+			image = segment_image(snake, i, direction)
+			# snake[i] = (x, y) = coin en haut à gauche de la case, en pixels
+			# On dessine le serpent avec blit
+			screen.blit(image, snake[i])
 
-		# Serpent : le corps sur ses cases, la tête et la queue décalées de shift pixels
-		draw_snake(snake, previous_snake, direction, shift)
+		# Pour aller plus loin, il faudrait partir sur deux rythmes différents donc le jeu en 60 FPS et une vitesse fixe pour le serpent
+		#	Ajouter aussi une interpolation pour lisser le mouvement du serpent
 
 		# Score en haut à gauche
 		# le f devant la chaine de caractères permet d'insérer le score avec {score}
@@ -623,9 +402,8 @@ def play():
 
 		# Affiche l'image dessinée à l'écran
 		pygame.display.flip()
-		# Limite à FPS images par seconde
-		# clock.tick renvoie le temps (en millisecondes) écoulé depuis son dernier appel : je l'ajoute au compteur du pas
-		time_since_step = time_since_step + clock.tick(FPS)
+		# Limite à GAME_FPS images par seconde
+		clock.tick(GAME_FPS)
 
 ######## Programme principal
 def main():
